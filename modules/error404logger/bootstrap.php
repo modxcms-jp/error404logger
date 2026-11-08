@@ -45,20 +45,26 @@ $actionUrl = function (array $params) use ($baseParams) {
 $storedText = function ($value) {
     return htmlspecialchars_decode(is_scalar($value) ? (string) $value : '', ENT_QUOTES);
 };
-// http(s) の URL かサイト内のパス（/ で始まる）だけをリンクにする
-$linkHtml = function ($url, $siteRelative) {
-    $text = rawurldecode($url);
+// リンク先。http(s) の URL かサイト内のパス（/ で始まる）だけ。リンクにしないときは ''
+$linkHref = function ($url, $siteRelative) {
+    if (preg_match('@\Ahttps?://@i', $url)) {
+        return $url;
+    }
     if ($siteRelative && preg_match('@\A/(?!/)@', $url)) {
-        $href = rtrim(MODX_SITE_URL, '/') . $url;
-    } elseif (preg_match('@\Ahttps?://@i', $url)) {
-        $href = $url;
-    } else {
-        return hsc($text);
+        return rtrim(MODX_SITE_URL, '/') . $url;
+    }
+    return '';
+};
+$linkHtml = function ($url, $siteRelative) use ($linkHref) {
+    $text = hsc(rawurldecode($url));
+    $href = $linkHref($url, $siteRelative);
+    if ($href === '') {
+        return $text;
     }
     return sprintf(
         '<a href="%s" target="_blank" rel="noopener noreferrer">%s</a>',
         hsc($href),
-        hsc($text)
+        $text
     );
 };
 

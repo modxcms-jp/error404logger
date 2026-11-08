@@ -5,7 +5,7 @@ include_once(__DIR__ . '/e404logger.class.inc.php');
 $e404 = new Error404Logger();
 
 $i = getv('do');
-if ($i === 'remove' && getv('url')) {
+if ($i === 'remove' && is_string(getv('url')) && getv('url') !== '') {
     return $e404->remove(getv('url'));
 }
 if ($i === 'clearAll') { // clear all data
@@ -50,8 +50,8 @@ $grd->pagerLocation = 'top-left';
 $ph['logs'] = $grd->render();
 
 // create most wanted grid
-$showTop = event()->param('showTop', 20);
-$ph['showing'] = $showTop < 10000
+$showTop = (int) event()->param('showTop', 20);
+$ph['showing'] = ($showTop > 0 && $showTop < 10000)
     ? sprintf('<p>Showing top %s</p>', $showTop)
     : '<p>Showing all</p>';
 

@@ -45,6 +45,11 @@ Changelog
 * "Clear all but last N days" uses the module setting keepLastDays (it was always 7)
 * the plugin no longer redirects to ?e404_redirect= (open redirect); the module opens the referer directly with rel="noreferrer"
 * only http(s) URLs and site paths are shown as links
+* the reverse DNS lookup (gethostbyaddr) no longer slows down every 404:
+  robots are matched against the User-Agent first (no lookup when it matches),
+  the host is looked up once per request and reused from an earlier entry of the same IP (failed lookups too),
+  and the new plugin setting &resolve_host=no turns the lookup off
+* the robots check uses the logged client IP (remoteIPIndexName) instead of REMOTE_ADDR, and ignores case
 
 0.06
 http://modxcms.com/forums/index.php/topic,12985.msg348190.html#msg348190

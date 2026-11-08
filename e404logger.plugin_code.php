@@ -12,7 +12,7 @@
  * @author      yama (https://kyms.jp)
  * @internal    @events        OnPageNotFound
  * @internal    @modx_category Manager and Admin
- * @internal    @properties &found_ref_only=Found ref only;list;yes,no;yes &count_robots=Robots count;list;yes,no;no; &robots=Robots list;text;googlebot,baidu,bing,crawl;&limit=Number of limit logs;1000 &trim=Number deleted at a time;100 &remoteIPIndexName=RemoteIP Index Name;text;REMOTE_ADDR
+ * @internal    @properties &found_ref_only=Found ref only;list;yes,no;yes &count_robots=Robots count;list;yes,no;no; &robots=Robots list;text;googlebot,baidu,bing,crawl;&limit=Number of limit logs;1000 &trim=Number deleted at a time;100 &remoteIPIndexName=RemoteIP Index Name;text;REMOTE_ADDR &resolve_host=Reverse DNS lookup of the client IP;list;yes,no;yes
  * @global $modx
  * @global $remoteIPIndexName
  */
@@ -32,28 +32,35 @@ if (event()->param('found_ref_only') === 'yes' && !serverv('HTTP_REFERER')) {
     return;
 }
 
+include_once(MODX_BASE_PATH . $e404logger_dir . 'e404logger.class.inc.php');
+$e404 = new Error404Logger();
+$e404->resolveHostEnabled = event()->param('resolve_host', 'yes') !== 'no';
+$ip = $e404->clientIp(event()->param('remoteIPIndexName', 'REMOTE_ADDR'));
+
+// 逆引き（gethostbyaddr()）は 404 の応答を遅らせることがあるので、
+// ロボットの除外は先に User-Agent で見て、当たらないときだけホスト名で見る。
+// ホスト名は 1 回だけ引き、記録にもそのまま使う（同じ IP の記録があれば、そのホスト名を使い回す）
+$host = null;
 if (event()->param('count_robots') === 'no') {
     $robots = array_filter(array_map('trim', explode(
         ',',
         (string) event()->param('robots', 'googlebot,baidu,msnbot')
     )));
-    $remote_addr = (string) serverv('REMOTE_ADDR', '');
-    $host_name = filter_var($remote_addr, FILTER_VALIDATE_IP) !== false
-        ? gethostbyaddr($remote_addr)
-        : false;
-    if (!is_string($host_name)) {
-        $host_name = '';
-    }
+    $userAgent = (string) serverv('HTTP_USER_AGENT', '');
     foreach ($robots as $robot) {
-        if (strpos($host_name, $robot) !== false) {
+        if (stripos($userAgent, $robot) !== false) {
+            return;
+        }
+    }
+    $host = $e404->resolveHost($ip);
+    foreach ($robots as $robot) {
+        if ($host !== '' && stripos($host, $robot) !== false) {
             return;
         }
     }
 }
 
-include_once(MODX_BASE_PATH . $e404logger_dir . 'e404logger.class.inc.php');
-$e404 = new Error404Logger();
-$e404->insert(event()->param('remoteIPIndexName', 'REMOTE_ADDR'));
+$e404->insert($ip, $host);
 $e404->purge_log(
     event()->param('limit', 1000),
     event()->param('trim', 100)

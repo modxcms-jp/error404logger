@@ -17,6 +17,12 @@ class Error404Logger
     /** @var string */
     protected $tableName = '';
 
+    /** @var bool reverse DNS lookup of the client IP (plugin setting resolve_host) */
+    public $resolveHostEnabled = true;
+
+    /** @var array<string, string> ip => host, for this request */
+    protected $hostCache = array();
+
     public function __construct()
     {
         $this->tableName = $this->resolveTableName();
@@ -47,60 +53,87 @@ class Error404Logger
         return $this->tableName;
     }
 
+    // most requested URLs (rows: url, num). $num <= 0 means all
     public function getTop($num = null)
     {
         $table = $this->getTableName();
         if ($table === '') {
-            return false;
+            return array();
         }
 
         $sql = sprintf(
-            'SELECT distinct(url), count(url) AS num FROM %s GROUP BY url ORDER BY num DESC',
+            'SELECT url, COUNT(url) AS num FROM %s GROUP BY url ORDER BY num DESC',
             $table
         );
         $num = (int) $num;
         if ($num > 0) {
             $sql .= ' LIMIT ' . $num;
         }
-        return db()->query($sql);
+        return db()->getRows(db()->query($sql)) ?: array();
     }
 
-    // get all results
-    public function getAll()
+    // number of all entries
+    public function count()
     {
         $table = $this->getTableName();
         if ($table === '') {
-            return false;
+            return 0;
         }
 
-        return db()->select(
-            '*',
-            $table,
-            '',
-            'createdon DESC'
-        );
+        return (int) db()->getValue(db()->select('COUNT(id)', $table));
     }
 
-    // add 404 query
-    public function insert($remoteIPIndexName = '')
+    // entries, newest first. $limit <= 0 means all
+    public function getAll($offset = 0, $limit = 0)
+    {
+        $table = $this->getTableName();
+        if ($table === '') {
+            return array();
+        }
+
+        $offset = max(0, (int) $offset);
+        $limit = (int) $limit;
+
+        return db()->getRows(
+            db()->select(
+                '*',
+                $table,
+                '',
+                'createdon DESC, id DESC',
+                $limit > 0 ? sprintf('%d,%d', $offset, $limit) : ''
+            )
+        ) ?: array();
+    }
+
+    // client IP. With $remoteIPIndexName (e.g. HTTP_X_FORWARDED_FOR), the last address of that header
+    public function clientIp($remoteIPIndexName = '')
     {
         $forwarded = $remoteIPIndexName ? serverv($remoteIPIndexName) : null;
         if (is_string($forwarded) && $forwarded !== '') {
-            $ip = preg_replace('/.*[, ]([^, ]+)\z/', '$1', $forwarded);
-        } else {
-            $ip = (string) serverv('REMOTE_ADDR', '');
+            return preg_replace('/.*[, ]([^, ]+)\z/', '$1', $forwarded);
         }
+        return (string) serverv('REMOTE_ADDR', '');
+    }
 
+    // add 404 query
+    // $host null means resolve it here
+    public function insert($ip, $host = null)
+    {
         $table = $this->getTableName();
         if ($table === '') {
             return false;
+        }
+
+        $ip = (string) $ip;
+        if ($host === null) {
+            $host = $this->resolveHost($ip);
         }
 
         return db()->insert(
             array(
                 'url'       => db()->escape($this->fix_xss_value(serverv('REQUEST_URI', ''))),
                 'ip'        => db()->escape($ip),
-                'host'      => db()->escape($this->resolveHost($ip)),
+                'host'      => db()->escape((string) $host),
                 'referer'   => db()->escape($this->fix_xss_value(serverv('HTTP_REFERER', ''))),
                 'createdon' => date('Y-m-d H:i:s')
             ),
@@ -114,6 +147,7 @@ class Error404Logger
         if (is_array($url)) {
             return 0;
         }
+        // $url is the stored value as it is (the request decodes it once; do not decode it again)
         if ($url !== null && $url !== '') {
             $table = $this->getTableName();
             if ($table === '') {
@@ -122,7 +156,7 @@ class Error404Logger
 
             db()->delete(
                 $table,
-                sprintf("url='%s'", db()->escape(urldecode((string) $url)))
+                sprintf("url='%s'", db()->escape((string) $url))
             );
             return db()->getAffectedRows();
         }
@@ -165,15 +199,52 @@ class Error404Logger
         );
     }
 
-    // reverse DNS lookup that never returns false/null
-    protected function resolveHost($ip)
+    /**
+     * Host name of $ip (reverse DNS). Never returns false/null.
+     *
+     * gethostbyaddr() can block for seconds (above all when the lookup fails), and it runs in the 404 response.
+     * So the host already logged for the same IP is reused (a failed lookup is stored as the IP itself,
+     * so failures are not retried either), and the result is kept for the rest of the request.
+     * With $resolveHostEnabled false, no lookup is done and '' is returned.
+     */
+    public function resolveHost($ip)
     {
-        if (!is_string($ip) || $ip === '' || filter_var($ip, FILTER_VALIDATE_IP) === false) {
+        if (!$this->resolveHostEnabled
+            || !is_string($ip) || $ip === '' || filter_var($ip, FILTER_VALIDATE_IP) === false) {
             return '';
         }
-        $host = gethostbyaddr($ip);
+        if (isset($this->hostCache[$ip])) {
+            return $this->hostCache[$ip];
+        }
 
-        return is_string($host) ? $host : $ip;
+        $host = $this->loggedHost($ip);
+        if ($host === '') {
+            $host = gethostbyaddr($ip);
+            $host = is_string($host) ? $host : $ip;
+        }
+
+        return $this->hostCache[$ip] = $host;
+    }
+
+    // host stored by an earlier entry of the same IP ('' if none)
+    protected function loggedHost($ip)
+    {
+        $table = $this->getTableName();
+        if ($table === '') {
+            return '';
+        }
+
+        $host = db()->getValue(
+            db()->select(
+                'host',
+                $table,
+                sprintf("ip='%s' AND host<>''", db()->escape($ip)),
+                'id DESC',
+                '1'
+            )
+        );
+
+        return is_string($host) ? $host : '';
     }
 
     public function purge_log($limit = 1000, $trim = 100)
@@ -211,22 +282,6 @@ class Error404Logger
                 "OPTIMIZE TABLE %s",
                 $table
             )
-        );
-    }
-
-    public function get_ph()
-    {
-        return array(
-            'dir'                 => (globalv('modx_textdir') === 'rtl') ? 'dir="rtl" ' : '',
-            'lc'                  => globalv('modx_lang_attribute', 'en'),
-            'charset'             => globalv('modx_manager_charset', 'utf-8'),
-            'site_url'            => MODX_SITE_URL,
-            'theme_path'          => MODX_MANAGER_URL . 'media/style/' . globalv('manager_theme'),
-            '_GET_a'              => getv('a'),
-            '_GET_id'             => getv('id'),
-            '_SERVER_SCRIPT_NAME' => serverv('SCRIPT_NAME'),
-            '_lang_clear_log'     => (globalv('_lang', array()))['clear_log'] ?? null,
-            'keepLastDays'        => globalv('keepLastDays', 7)
         );
     }
 

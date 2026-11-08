@@ -36,11 +36,17 @@ if (event()->param('found_ref_only') === 'yes' && !serverv('HTTP_REFERER')) {
 }
 
 if (event()->param('count_robots') === 'no') {
-    $robots = explode(
+    $robots = array_filter(array_map('trim', explode(
         ',',
-        event()->param('robots', 'googlebot,baidu,msnbot')
-    );
-    $host_name = gethostbyaddr(serverv('REMOTE_ADDR'));
+        (string) event()->param('robots', 'googlebot,baidu,msnbot')
+    )));
+    $remote_addr = (string) serverv('REMOTE_ADDR', '');
+    $host_name = filter_var($remote_addr, FILTER_VALIDATE_IP) !== false
+        ? gethostbyaddr($remote_addr)
+        : false;
+    if (!is_string($host_name)) {
+        $host_name = '';
+    }
     foreach ($robots as $robot) {
         if (strpos($host_name, $robot) !== false) {
             return;

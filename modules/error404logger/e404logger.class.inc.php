@@ -58,9 +58,10 @@ class Error404Logger
             'SELECT distinct(url), count(url) AS num FROM %s GROUP BY url ORDER BY num DESC',
             $table
         );
-        if ($num) {
+        $num = (int) $num;
+        if ($num > 0) {
             $sql .= ' LIMIT ' . $num;
-        };
+        }
         return db()->query($sql);
     }
 
@@ -83,10 +84,11 @@ class Error404Logger
     // add 404 query
     public function insert($remoteIPIndexName = '')
     {
-        if ($remoteIPIndexName && serverv($remoteIPIndexName)) {
-            $ip = preg_replace('/.*[, ]([^, ]+)\z/', '$1', serverv($remoteIPIndexName));
+        $forwarded = $remoteIPIndexName ? serverv($remoteIPIndexName) : null;
+        if (is_string($forwarded) && $forwarded !== '') {
+            $ip = preg_replace('/.*[, ]([^, ]+)\z/', '$1', $forwarded);
         } else {
-            $ip = serverv('REMOTE_ADDR');
+            $ip = (string) serverv('REMOTE_ADDR', '');
         }
 
         $table = $this->getTableName();
@@ -96,10 +98,10 @@ class Error404Logger
 
         return db()->insert(
             array(
-                'url'       => db()->escape($this->fix_xss_value(serverv('REQUEST_URI'))),
-                'ip'        => $ip,
-                'host'      => gethostbyaddr($ip),
-                'referer'   => db()->escape($this->fix_xss_value(serverv('HTTP_REFERER'))),
+                'url'       => db()->escape($this->fix_xss_value(serverv('REQUEST_URI', ''))),
+                'ip'        => db()->escape($ip),
+                'host'      => db()->escape($this->resolveHost($ip)),
+                'referer'   => db()->escape($this->fix_xss_value(serverv('HTTP_REFERER', ''))),
                 'createdon' => date('Y-m-d H:i:s')
             ),
             $table
@@ -109,7 +111,10 @@ class Error404Logger
     // remove specific url from entries
     public function remove($url = null)
     {
-        if ($url) {
+        if (is_array($url)) {
+            return 0;
+        }
+        if ($url !== null && $url !== '') {
             $table = $this->getTableName();
             if ($table === '') {
                 return 0;
@@ -117,7 +122,7 @@ class Error404Logger
 
             db()->delete(
                 $table,
-                sprintf("url='%s'", urldecode($url))
+                sprintf("url='%s'", db()->escape(urldecode((string) $url)))
             );
             return db()->getAffectedRows();
         }
@@ -131,6 +136,11 @@ class Error404Logger
 
     public function clearLast($num)
     {
+        $num = is_numeric($num) ? (int) $num : 0;
+        if ($num <= 0) {
+            return 0;
+        }
+
         $table = $this->getTableName();
         if ($table === '') {
             return 0;
@@ -151,8 +161,19 @@ class Error404Logger
         return str_replace(
             '&amp;',
             '&',
-            evo()->hsc($value)
+            evo()->hsc(is_string($value) ? $value : '')
         );
+    }
+
+    // reverse DNS lookup that never returns false/null
+    protected function resolveHost($ip)
+    {
+        if (!is_string($ip) || $ip === '' || filter_var($ip, FILTER_VALIDATE_IP) === false) {
+            return '';
+        }
+        $host = gethostbyaddr($ip);
+
+        return is_string($host) ? $host : $ip;
     }
 
     public function purge_log($limit = 1000, $trim = 100)
@@ -223,7 +244,7 @@ class Error404Logger
         return $tableName;
     }
 
-    function table_exists($table_name)
+    public function table_exists($table_name)
     {
         $tableLike = $this->normalizeTableNameForLike($table_name);
 
@@ -271,7 +292,7 @@ class Error404Logger
             $this->createTable();
         }
         $metaData = db()->getTableMetaData($table);
-        if ($metaData['referer']) {
+        if (!empty($metaData['referer'])) {
             return;
         }
         db()->query(

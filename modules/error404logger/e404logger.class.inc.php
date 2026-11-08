@@ -47,38 +47,56 @@ class Error404Logger
         return $this->tableName;
     }
 
+    // most requested URLs (rows: url, num). $num <= 0 means all
     public function getTop($num = null)
     {
         $table = $this->getTableName();
         if ($table === '') {
-            return false;
+            return array();
         }
 
         $sql = sprintf(
-            'SELECT distinct(url), count(url) AS num FROM %s GROUP BY url ORDER BY num DESC',
+            'SELECT url, COUNT(url) AS num FROM %s GROUP BY url ORDER BY num DESC',
             $table
         );
         $num = (int) $num;
         if ($num > 0) {
             $sql .= ' LIMIT ' . $num;
         }
-        return db()->query($sql);
+        return db()->getRows(db()->query($sql)) ?: array();
     }
 
-    // get all results
-    public function getAll()
+    // number of all entries
+    public function count()
     {
         $table = $this->getTableName();
         if ($table === '') {
-            return false;
+            return 0;
         }
 
-        return db()->select(
-            '*',
-            $table,
-            '',
-            'createdon DESC'
-        );
+        return (int) db()->getValue(db()->select('COUNT(id)', $table));
+    }
+
+    // entries, newest first. $limit <= 0 means all
+    public function getAll($offset = 0, $limit = 0)
+    {
+        $table = $this->getTableName();
+        if ($table === '') {
+            return array();
+        }
+
+        $offset = max(0, (int) $offset);
+        $limit = (int) $limit;
+
+        return db()->getRows(
+            db()->select(
+                '*',
+                $table,
+                '',
+                'createdon DESC, id DESC',
+                $limit > 0 ? sprintf('%d,%d', $offset, $limit) : ''
+            )
+        ) ?: array();
     }
 
     // add 404 query
@@ -114,6 +132,7 @@ class Error404Logger
         if (is_array($url)) {
             return 0;
         }
+        // $url is the stored value as it is (the request decodes it once; do not decode it again)
         if ($url !== null && $url !== '') {
             $table = $this->getTableName();
             if ($table === '') {
@@ -122,7 +141,7 @@ class Error404Logger
 
             db()->delete(
                 $table,
-                sprintf("url='%s'", db()->escape(urldecode((string) $url)))
+                sprintf("url='%s'", db()->escape((string) $url))
             );
             return db()->getAffectedRows();
         }
@@ -211,22 +230,6 @@ class Error404Logger
                 "OPTIMIZE TABLE %s",
                 $table
             )
-        );
-    }
-
-    public function get_ph()
-    {
-        return array(
-            'dir'                 => (globalv('modx_textdir') === 'rtl') ? 'dir="rtl" ' : '',
-            'lc'                  => globalv('modx_lang_attribute', 'en'),
-            'charset'             => globalv('modx_manager_charset', 'utf-8'),
-            'site_url'            => MODX_SITE_URL,
-            'theme_path'          => MODX_MANAGER_URL . 'media/style/' . globalv('manager_theme'),
-            '_GET_a'              => getv('a'),
-            '_GET_id'             => getv('id'),
-            '_SERVER_SCRIPT_NAME' => serverv('SCRIPT_NAME'),
-            '_lang_clear_log'     => (globalv('_lang', array()))['clear_log'] ?? null,
-            'keepLastDays'        => globalv('keepLastDays', 7)
         );
     }
 

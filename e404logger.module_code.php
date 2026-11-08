@@ -2,8 +2,8 @@
 ///////////////////////////////////
 //  Error 404 Logger
 //  --------------------------------
-//  module version: 0.2
-//  suitable for MODx 0.9.5+
+//  module version: 0.3
+//  suitable for evolution-jp 1.3+
 //
 //  author: Andraz Kozelj (andraz dot kozelj at amis dot net)
 //  date created:  2007-03-14

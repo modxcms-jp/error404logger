@@ -16,6 +16,8 @@ Install notes
 
 Unpack the contents of this archive into "/assets/modules/error404logger" folder.
 
+The module requires evolution-jp 1.3 or later (it uses the manager's DataTable).
+
 Create a module in MODx and copy the contents of file "e404logger.module.php" into it.
 Name the module "Error 404 Logger".
 Copy the config string into "Module configuration" field and set the preferences.
@@ -23,6 +25,7 @@ Copy the config string into "Module configuration" field and set the preferences
 Create a plugin in MODx and copy the contents of file "e404logger.plugin.php" into it.
 Name the plugin "Error404Logger".
 Check the "OnPageNotFound" system event.
+(The "OnWebPageInit" event is no longer used since 0.3. You can uncheck it.)
 
 And there you go!
 
@@ -33,6 +36,16 @@ All 404 error (page not found) are logged in a separate table and browsable thro
 
 Changelog
 =========
+0.3
+----
+* evolution-jp 1.3: the module draws its tables with DataTable / DataTablePager (DataGrid was removed from the core)
+* the module is shown inside the manager shell; the entries are paged with LIMIT instead of fetching all rows
+* removing / clearing entries is done by POST (checked by the core CSRF token) instead of GET, without inline onclick
+* removing an entry of "Most wanted" works for percent-encoded URLs (the URL is no longer decoded twice)
+* "Clear all but last N days" uses the module setting keepLastDays (it was always 7)
+* the plugin no longer redirects to ?e404_redirect= (open redirect); the module opens the referer directly with rel="noreferrer"
+* only http(s) URLs and site paths are shown as links
+
 0.06
 http://modxcms.com/forums/index.php/topic,12985.msg348190.html#msg348190
 SQL injection is possible.

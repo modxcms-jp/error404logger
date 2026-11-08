@@ -18,11 +18,11 @@ Unpack the contents of this archive into "/assets/modules/error404logger" folder
 
 The module requires evolution-jp 1.3 or later (it uses the manager's DataTable).
 
-Create a module in MODx and copy the contents of file "e404logger.module.php" into it.
+Create a module in MODx and copy the contents of file "e404logger.module_code.php" into it.
 Name the module "Error 404 Logger".
 Copy the config string into "Module configuration" field and set the preferences.
 
-Create a plugin in MODx and copy the contents of file "e404logger.plugin.php" into it.
+Create a plugin in MODx and copy the contents of file "e404logger.plugin_code.php" into it.
 Name the plugin "Error404Logger".
 Check the "OnPageNotFound" system event.
 (The "OnWebPageInit" event is no longer used since 0.3. You can uncheck it.)
@@ -50,6 +50,7 @@ Changelog
   the host is looked up once per request and reused from an earlier entry of the same IP (failed lookups too),
   and the new plugin setting &resolve_host=no turns the lookup off
 * the robots check uses the logged client IP (remoteIPIndexName) instead of REMOTE_ADDR, and ignores case
+* the plugin settings &limit and &trim can be changed from the plugin configuration (their type was missing in @properties)
 
 0.06
 http://modxcms.com/forums/index.php/topic,12985.msg348190.html#msg348190

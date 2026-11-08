@@ -45,13 +45,16 @@ $actionUrl = function (array $params) use ($baseParams) {
 $storedText = function ($value) {
     return htmlspecialchars_decode(is_scalar($value) ? (string) $value : '', ENT_QUOTES);
 };
+// サイトのオリジン（scheme://host[:port]）。記録した URL は REQUEST_URI で、設置ディレクトリを含むので、
+// MODX_SITE_URL（設置ディレクトリを含む）ではなくオリジンに付ける
+$siteOrigin = preg_match('@\Ahttps?://[^/]+@i', MODX_SITE_URL, $m) ? $m[0] : '';
 // リンク先。http(s) の URL かサイト内のパス（/ で始まる）だけ。リンクにしないときは ''
-$linkHref = function ($url, $siteRelative) {
+$linkHref = function ($url, $siteRelative) use ($siteOrigin) {
     if (preg_match('@\Ahttps?://@i', $url)) {
         return $url;
     }
     if ($siteRelative && preg_match('@\A/(?!/)@', $url)) {
-        return rtrim(MODX_SITE_URL, '/') . $url;
+        return $siteOrigin . $url;
     }
     return '';
 };

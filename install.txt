@@ -17,6 +17,9 @@ Install notes
 Unpack the contents of this archive into "/assets/modules/error404logger" folder.
 
 The module requires evolution-jp 1.3 or later (it uses the manager's DataTable).
+It needs a core that includes modxcms-jp/evolution-jp#1463, where the manager theme
+stripes the table rows with CSS. On an older core that still added the
+gridItem / gridAltItem row classes, the rows may lose their alternating colors.
 
 Create a module in MODx and copy the contents of file "e404logger.module_code.php" into it.
 Name the module "Error 404 Logger".
@@ -50,6 +53,8 @@ Changelog
   the host is looked up once per request and reused from an earlier entry of the same IP (failed lookups too),
   and the new plugin setting &resolve_host=no turns the lookup off
 * the robots check uses the logged client IP (remoteIPIndexName) instead of REMOTE_ADDR, and ignores case
+* the tables no longer pass rowClasses (gridItem / gridAltItem) to DataTable; the manager theme stripes the rows
+  with CSS since modxcms-jp/evolution-jp#1463, which is the minimum core for this version
 
 0.06
 http://modxcms.com/forums/index.php/topic,12985.msg348190.html#msg348190

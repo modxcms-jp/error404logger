@@ -103,7 +103,6 @@ $columns = array(
 );
 $table = new DataTable($columns, array(
     'id' => 'e404logger-all',
-    'rowClasses' => array('gridItem', 'gridAltItem'),
     'emptyMessage' => 'There are no Error 404 entries! Good for you...',
 ));
 $nav = $pager->render($links, array('label' => 'Pagination'));
@@ -137,7 +136,6 @@ $columns = array(
 );
 $table = new DataTable($columns, array(
     'id' => 'e404logger-top',
-    'rowClasses' => array('gridItem', 'gridAltItem'),
     'emptyMessage' => 'There are no Error 404 entries! Good for you...',
 ));
 $showtop = $table->render($e404->getTop($showTop));

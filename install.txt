@@ -55,6 +55,10 @@ Changelog
 * the robots check uses the logged client IP (remoteIPIndexName) instead of REMOTE_ADDR, and ignores case
 * the tables no longer pass rowClasses (gridItem / gridAltItem) to DataTable; the manager theme stripes the rows
   with CSS since modxcms-jp/evolution-jp#1463, which is the minimum core for this version
+* a 404 with a long URL or referer (e.g. from a Google search result) no longer becomes HTTP 500
+  on MySQL in strict mode (the default of MySQL 8): the values are cut to the column length before INSERT,
+  and the columns are widened (url / referer varchar(2048), host varchar(255), ip varchar(45));
+  a table made by an older version is altered the first time the plugin or the module runs
 
 0.06
 http://modxcms.com/forums/index.php/topic,12985.msg348190.html#msg348190

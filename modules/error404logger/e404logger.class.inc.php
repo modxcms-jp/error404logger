@@ -23,6 +23,21 @@ class Error404Logger
     /** @var array<string, string> ip => host, for this request */
     protected $hostCache = array();
 
+    /**
+     * Length (characters) of the varchar columns.
+     * A longer value is cut to this length before INSERT: on MySQL in strict mode (the default of MySQL 8)
+     * a too long value fails the INSERT, and the core turns that DB error into HTTP 500 instead of the 404.
+     * Tables made by an older version are widened by checkTable().
+     *
+     * @var array<string, int>
+     */
+    protected $columnLengths = array(
+        'ip'      => 45,   // IPv6 (incl. IPv4-mapped) fits in 45
+        'host'    => 255,  // max length of a DNS name
+        'url'     => 2048,
+        'referer' => 2048, // search engine referers (e.g. https://www.google.com/url?...) are often over 200
+    );
+
     public function __construct()
     {
         $this->tableName = $this->resolveTableName();
@@ -129,16 +144,29 @@ class Error404Logger
             $host = $this->resolveHost($ip);
         }
 
-        return db()->insert(
-            array(
-                'url'       => db()->escape($this->fix_xss_value(serverv('REQUEST_URI', ''))),
-                'ip'        => db()->escape($ip),
-                'host'      => db()->escape((string) $host),
-                'referer'   => db()->escape($this->fix_xss_value(serverv('HTTP_REFERER', ''))),
-                'createdon' => date('Y-m-d H:i:s')
-            ),
-            $table
+        $fields = array(
+            'url'     => $this->fix_xss_value(serverv('REQUEST_URI', '')),
+            'ip'      => $ip,
+            'host'    => (string) $host,
+            'referer' => $this->fix_xss_value(serverv('HTTP_REFERER', '')),
         );
+        foreach ($fields as $name => $value) {
+            $fields[$name] = db()->escape($this->fitColumn($name, $value));
+        }
+        $fields['createdon'] = date('Y-m-d H:i:s');
+
+        return db()->insert($fields, $table);
+    }
+
+    // $value cut to the length of column $name (a cut HTML entity at the end is dropped too)
+    protected function fitColumn($name, $value)
+    {
+        $max = $this->columnLengths[$name];
+        if (mb_strlen($value, 'UTF-8') <= $max) {
+            return $value;
+        }
+
+        return preg_replace('/&#?[a-zA-Z0-9]*\z/', '', mb_substr($value, 0, $max, 'UTF-8'));
     }
 
     // remove specific url from entries
@@ -325,13 +353,17 @@ class Error404Logger
             'CREATE TABLE IF NOT EXISTS %s (
                 `id` int(10) unsigned NOT NULL auto_increment,
                 `createdon` datetime NOT NULL,
-                `ip` varchar(20) NOT NULL,
-                `host` varchar(100) NOT NULL,
-                `url` varchar(200) NOT NULL,
-                `referer` varchar(200) NOT NULL,
+                `ip` varchar(%d) NOT NULL,
+                `host` varchar(%d) NOT NULL,
+                `url` varchar(%d) NOT NULL,
+                `referer` varchar(%d) NOT NULL,
                 PRIMARY KEY  (`id`)
                 ) ENGINE=MyISAM AUTO_INCREMENT=1 ;',
-            $table
+            $table,
+            $this->columnLengths['ip'],
+            $this->columnLengths['host'],
+            $this->columnLengths['url'],
+            $this->columnLengths['referer']
         ));
     }
 
@@ -347,14 +379,42 @@ class Error404Logger
             $this->createTable();
         }
         $metaData = db()->getTableMetaData($table);
-        if (!empty($metaData['referer'])) {
+        if (!is_array($metaData)) {
             return;
         }
-        db()->query(
-            sprintf(
-                'ALTER TABLE %s ADD COLUMN `referer` varchar(200) NULL AFTER `host`',
-                $table
-            )
-        );
+        if (empty($metaData['referer'])) {
+            db()->query(
+                sprintf(
+                    'ALTER TABLE %s ADD COLUMN `referer` varchar(%d) NULL AFTER `host`',
+                    $table,
+                    $this->columnLengths['referer']
+                )
+            );
+        }
+        $this->widenColumns($table, $metaData);
+    }
+
+    // widen the varchar columns of a table made by an older version (url / referer were varchar(200))
+    protected function widenColumns($table, $metaData)
+    {
+        $modify = array();
+        foreach ($this->columnLengths as $name => $length) {
+            if (empty($metaData[$name]['Type'])
+                || !preg_match('/\Avarchar\((\d+)\)/i', $metaData[$name]['Type'], $m)
+                || (int) $m[1] >= $length) {
+                continue;
+            }
+            // keep NULL / NOT NULL as it is (referer added by ALTER is NULL and may hold NULLs)
+            $modify[] = sprintf(
+                'MODIFY `%s` varchar(%d) %s',
+                $name,
+                $length,
+                ($metaData[$name]['Null'] ?? '') === 'YES' ? 'NULL' : 'NOT NULL'
+            );
+        }
+        if (!$modify) {
+            return;
+        }
+        db()->query(sprintf('ALTER TABLE %s %s', $table, implode(', ', $modify)));
     }
 }
